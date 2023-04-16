@@ -1,0 +1,70 @@
+Abra o software R em seu computador.
+Crie um novo script clicando em "File" e depois em "New Script".
+Copie todo o código fornecido na resposta e cole-o no novo script.
+Modifique as informações de entrada na seção de definição das informações de entrada, conforme as suas necessidades:
+Defina a latitude e longitude dos 8 pontos amostrais na variável latitude e longitude, respectivamente. Certifique-se de que esses valores estejam em um vetor.
+Defina a data de amostragem na variável dia, no formato "aaaa-mm-dd".
+Execute o código.
+Aguarde a execução da rotina, que pode levar alguns minutos dependendo da quantidade de dados a serem capturados.
+Ao final da execução, a tabela dados_oceanograficos será criada com os dados capturados para os pontos amostrais definidos.
+Verifique a tabela resultante para garantir que os dados foram capturados corretamente.
+Lembre-se de que a rotina depende dos pacotes "httr", "jsonlite" e "raster", que devem estar instalados em seu computador. Caso eles ainda não estejam instalados, execute o comando install.packages(c("httr", "jsonlite", "raster")) antes de executar o código.
+
+
+# Instale e carregue os pacotes necessários
+install.packages("httr")
+install.packages("jsonlite")
+library(httr)
+library(jsonlite)
+library(raster)
+
+# Defina as informações de entrada
+latitude <- c(-23.57, -23.60, -23.62, -23.64, -23.67, -23.70, -23.73, -23.76)
+longitude <- c(-45.67, -45.70, -45.73, -45.76, -45.79, -45.82, -45.85, -45.88)
+dia <- "2023-04-16"
+
+# Defina a função para capturar as variáveis oceanográficas
+capturar_dados_oceanograficos <- function(lat, lon, dia) {
+  url <- paste0("https://nrt.cmems-du.eu/api/v1/service/eas/catalogue/dataset-oc-search?",
+                "latitude=", lat, "&longitude=", lon, "&start_date=", dia, "T00:00:00Z",
+                "&end_date=", dia, "T23:59:59Z&variables=thetao,so,chl,uo,vo")
+  headers <- c("Accept" = "application/json")
+  resposta <- GET(url, headers = headers)
+  if (status_code(resposta) == 200) {
+    conteudo <- content(resposta, as = "text", encoding = "UTF-8")
+    dados <- fromJSON(conteudo)
+    if (dados$count > 0) {
+      url_dados <- dados$results[[1]]$opendap_url
+      variaveis <- c("thetao", "so", "chl", "uo", "vo")
+      variaveis_url <- paste0("&", paste0("var=", variaveis, collapse = "&var="))
+      url_dados_completa <- paste0(url_dados, ".html?", variaveis_url)
+      dados_completo <- brick(url_dados_completa)
+      dados_subset <- extract(dados_completo, cbind(lon, lat))
+      dados_subset <- data.frame(t(dados_subset), row.names = NULL)
+      names(dados_subset) <- variaveis
+      return(dados_subset)
+    }
+  }
+  return(NULL)
+}
+
+# Crie uma tabela para armazenar os dados capturados
+dados_oceanograficos <- data.frame(latitude = numeric(),
+                                   longitude = numeric(),
+                                   temperatura_superficial_mar = numeric(),
+                                   profundidade = numeric(),
+                                   salinidade = numeric(),
+                                   clorofila = numeric(),
+                                   velocidade_mare = numeric())
+
+# Itere pelos pontos amostrais e capture os dados oceanográficos
+for (i in 1:length(latitude)) {
+  dados <- capturar_dados_oceanograficos(latitude[i], longitude[i], dia)
+  if (!is.null(dados)) {
+    dados_oceanograficos <- rbind(dados_oceanograficos,
+                                  data.frame(latitude = latitude[i],
+                                             longitude = longitude[i],
+                                             temperatura_superficial_mar = dados$thetao[1],
+                                             profundidade = dados$so[1],
+                                             salinidade = dados$so[1],
+                                             clorofila = dados
